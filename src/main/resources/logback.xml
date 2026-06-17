@@ -1,0 +1,172 @@
+<configuration scan="true" scanPeriod="30 seconds">
+
+    <!--
+        Project Fiorino — Logback 結構化日誌配置
+        ==========================================
+
+        架構設計思維：
+        採用雙輸出策略：
+        1. Console Appender：輸出到 STDERR（不干擾 Dashboard 的 STDOUT 清屏）
+           格式：彩色人類可讀格式（開發調試用）
+        2. File Appender：輸出到 JSON 文件
+           格式：Logstash JSON 格式（機器可讀，便於 ELK Stack 接入）
+
+        日誌分級策略：
+        - com.fiorino.infrastructure.api → INFO（API 調用記錄，不太詳細）
+        - com.fiorino.domain → DEBUG（領域邏輯細節，可開啟調試）
+        - com.fiorino.infrastructure.dashboard → ERROR（Dashboard 只記錄錯誤）
+        - 根 Logger → INFO
+
+        文件滾動策略：
+        - 按時間（每天）和大小（100MB）滾動
+        - 保留最近 30 天的日誌
+        - 最大總磁盤佔用：3GB
+    -->
+
+    <!-- 日誌文件存儲目錄 -->
+    <property name="LOG_DIR" value="./logs"/>
+    <property name="APP_NAME" value="project-fiorino"/>
+
+    <!-- ============================================================
+         Console Appender：人類可讀格式（輸出到 STDERR 避免與 Dashboard 衝突）
+    ============================================================ -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <!-- 輸出到 STDERR，不干擾 Dashboard 的 STDOUT 清屏 -->
+        <target>System.err</target>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <!-- 只輸出 WARN 及以上到控制台，避免干擾 TUI -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>WARN</level>
+        </filter>
+    </appender>
+
+    <!-- ============================================================
+         JSON File Appender：結構化日誌（Logstash 格式）
+         每天滾動，保留 30 天
+    ============================================================ -->
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}.json.log</file>
+
+        <!-- 滾動策略：按時間 + 大小 -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- 文件名格式：project-fiorino.2024-01-15.1.json.log -->
+            <fileNamePattern>${LOG_DIR}/${APP_NAME}.%d{yyyy-MM-dd}.%i.json.log</fileNamePattern>
+            <!-- 每個文件最大 100MB -->
+            <maxFileSize>100MB</maxFileSize>
+            <!-- 保留 30 天 -->
+            <maxHistory>30</maxHistory>
+            <!-- 總磁盤佔用上限 3GB -->
+            <totalSizeCap>3GB</totalSizeCap>
+        </rollingPolicy>
+
+        <!-- Logstash JSON 編碼器：輸出機器可讀的結構化 JSON -->
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- 添加自定義欄位 -->
+            <customFields>{"app":"project-fiorino","version":"1.0.0","env":"production"}</customFields>
+            <!-- 時間戳格式（ISO 8601 with timezone） -->
+            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSSZ</timestampPattern>
+            <!-- 包含調用者信息（用於問題排查，會有輕微性能影響） -->
+            <includeCallerData>false</includeCallerData>
+            <!-- 包含 MDC（Mapped Diagnostic Context，可在線程中設置追蹤 ID） -->
+            <includeMdc>true</includeMdc>
+        </encoder>
+    </appender>
+
+    <!-- ============================================================
+         INFO 文件 Appender：標準文本格式（人工排查用）
+    ============================================================ -->
+    <appender name="INFO_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}.log</file>
+
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/${APP_NAME}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{40} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- ============================================================
+         非同步 Appender 包裝（提升日誌寫入性能）
+         使用非同步隊列，不讓 I/O 阻塞業務線程
+    ============================================================ -->
+    <appender name="ASYNC_JSON" class="ch.qos.logback.classic.AsyncAppender">
+        <discardingThreshold>0</discardingThreshold>   <!-- 不因隊列滿而丟棄日誌 -->
+        <queueSize>2048</queueSize>                    <!-- 隊列大小 -->
+        <appender-ref ref="JSON_FILE"/>
+        <includeCallerData>false</includeCallerData>
+    </appender>
+
+    <appender name="ASYNC_INFO" class="ch.qos.logback.classic.AsyncAppender">
+        <discardingThreshold>0</discardingThreshold>
+        <queueSize>1024</queueSize>
+        <appender-ref ref="INFO_FILE"/>
+    </appender>
+
+    <!-- ============================================================
+         Logger 配置（細粒度控制各模塊的日誌級別）
+    ============================================================ -->
+
+    <!-- Binance API 適配器：DEBUG 以看到所有 API 調用細節 -->
+    <logger name="com.fiorino.infrastructure.api" level="INFO" additivity="false">
+        <appender-ref ref="ASYNC_JSON"/>
+        <appender-ref ref="ASYNC_INFO"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- Dashboard：只記錄 ERROR，避免刷新日誌淹沒業務日誌 -->
+    <logger name="com.fiorino.infrastructure.dashboard" level="ERROR" additivity="false">
+        <appender-ref ref="ASYNC_JSON"/>
+    </logger>
+
+    <!-- Domain 層：DEBUG 以觀察狀態機轉移 -->
+    <logger name="com.fiorino.domain" level="DEBUG" additivity="false">
+        <appender-ref ref="ASYNC_JSON"/>
+        <appender-ref ref="ASYNC_INFO"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- Application 層：INFO -->
+    <logger name="com.fiorino.application" level="INFO" additivity="false">
+        <appender-ref ref="ASYNC_JSON"/>
+        <appender-ref ref="ASYNC_INFO"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- Infrastructure 層（非 API）：INFO -->
+    <logger name="com.fiorino.infrastructure" level="INFO" additivity="false">
+        <appender-ref ref="ASYNC_JSON"/>
+        <appender-ref ref="ASYNC_INFO"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- HikariCP：只記錄 WARN，避免連線池心跳日誌噪音 -->
+    <logger name="com.zaxxer.hikari" level="WARN" additivity="false">
+        <appender-ref ref="ASYNC_JSON"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- H2 Database：只記錄 ERROR -->
+    <logger name="org.h2" level="ERROR" additivity="false">
+        <appender-ref ref="ASYNC_JSON"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- ============================================================
+         根 Logger（所有未配置的 Logger 的預設）
+    ============================================================ -->
+    <root level="INFO">
+        <appender-ref ref="ASYNC_JSON"/>
+        <appender-ref ref="ASYNC_INFO"/>
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>

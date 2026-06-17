@@ -1,0 +1,38 @@
+# ── Build 產物 ──
+target/
+*.class
+
+# ── 本地資料庫 / 執行期資料（H2）──
+data/
+*.mv.db
+*.trace.db
+
+# ── 日誌 ──
+logs/
+*.log
+*.err
+nohup.out
+
+# ── 匯出資料（特徵矩陣等研究產物）──
+*.csv
+
+# ── 量化採集器 runtime（位於 ~/.fiorino，本不在專案內，保險起見）──
+.fiorino/
+
+# ── 機密 / 憑證（絕不入庫）──
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+*secret*.properties
+application-secret*.properties
+**/credentials*.json
+
+# ── OS / IDE ──
+.DS_Store
+.idea/
+*.iml
+.vscode/

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Project Fiorino — Track A 量化採集 launchd 排程
+  每日 08:05 跑一次 BTC 量化分析並存入 H2。
+
+  ⚠️ 重要：所有路徑都在 ~/.fiorino（非 macOS TCC 保護區）。
+     不可放 ~/Documents — launchd 對 Documents 無存取權（會 Operation not permitted / exit 126），
+     除非在系統設定 GUI 授予「完全磁碟存取」，而 headless（Termius/SSH）做不到。
+
+  部署 + 安裝（用 scripts/deploy-collector.sh 一鍵完成）：
+    ./scripts/deploy-collector.sh
+  手動安裝：
+    cp scripts/com.fiorino.quant.collect.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.fiorino.quant.collect.plist
+  立即測試一次：
+    launchctl kickstart gui/$(id -u)/com.fiorino.quant.collect
+  移除：
+    launchctl bootout gui/$(id -u)/com.fiorino.quant.collect
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fiorino.quant.collect</string>
+
+    <!-- 直接呼叫 java 跑部署在 ~/.fiorino 的 jar，全程不碰 Documents -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/opt/openjdk/bin/java</string>
+        <string>-jar</string>
+        <string>/Users/mac/.fiorino/project-fiorino.jar</string>
+        <string>--collect</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/mac/.fiorino</string>
+
+    <!-- 每日 08:05 觸發 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>5</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/mac/.fiorino/logs/quant-collect.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/mac/.fiorino/logs/quant-collect.err</string>
+</dict>
+</plist>
