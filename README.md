@@ -16,6 +16,68 @@
 
 ---
 
+## 架構總覽 / Architecture Overview
+
+Hexagonal (Ports & Adapters) + DDD layering — dependencies always point **inward** toward the zero-dependency domain core. 依賴方向一律由外層指向**無外部依賴的領域核心**。
+
+```mermaid
+flowchart TD
+    User(["👤 User / CLI"]) --> Menu
+
+    subgraph CLI["cli · Presentation Layer 展示層"]
+        Menu["FiorinoLauncher<br/>Main Menu 主選單"]
+        Quant["BtcQuantAnalyzer<br/>8-signal model 8信號模型"]
+        Research["QuantResearchConsole<br/>backtest pipeline 回測管線"]
+    end
+
+    subgraph APP["application · Application Layer 應用層"]
+        Orch["GridOrchestrator<br/>編排器"]
+        Exec["GridOrderExecutor<br/>⚡ Virtual Threads"]
+        RL["RateLimiter<br/>🔒 lock-free token bucket"]
+    end
+
+    subgraph DOMAIN["domain · Domain Layer 領域層 (zero deps 零依賴)"]
+        Cfg["GridConfig<br/>網格設定"]
+        Cell["GridCell<br/>格子訂單模型"]
+        SM["GridStateMachine<br/>INIT→RUNNING→…→STOPPED"]
+    end
+
+    subgraph INFRA["infrastructure · Infrastructure Layer 基礎設施層"]
+        BAPI["BinanceApiAdapter<br/>REST + HMAC"]
+        State["LocalStateManager<br/>H2 + HikariCP"]
+        Dash["ConsoleDashboard<br/>即時儀表板"]
+    end
+
+    Menu --> Orch
+    Menu --> Quant
+    Menu --> Research
+
+    Orch --> SM
+    Orch --> Cfg
+    Orch --> Exec
+    Orch --> State
+    Orch --> Dash
+    Exec --> Cell
+    Exec --> RL
+    Exec --> BAPI
+
+    RL -. guards 限流 .-> BAPI
+    BAPI -->|REST / HMAC| Binance[("Binance Spot<br/>Testnet API")]
+    State -->|JDBC| H2[("H2 file DB<br/>crash recovery 崩潰恢復")]
+    Quant -->|HTTP| Free[("Free public APIs<br/>F&G · CoinGecko · …")]
+
+    classDef domain fill:#fef3c7,stroke:#d97706,color:#000;
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#000;
+    classDef infra fill:#dcfce7,stroke:#16a34a,color:#000;
+    classDef cli fill:#f3e8ff,stroke:#9333ea,color:#000;
+    class Cfg,Cell,SM domain;
+    class Orch,Exec,RL app;
+    class BAPI,State,Dash infra;
+    class Menu,Quant,Research cli;
+```
+
+---
+
 <a name="繁體中文"></a>
 # 繁體中文
 
